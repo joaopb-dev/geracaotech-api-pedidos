@@ -1,0 +1,1358 @@
+{
+  "info": {
+    "name": "API de pedidos — Projeto B",
+    "description": "Coleção da API de pedidos: importe no Postman e use base_url http://localhost:8080. Execute as pastas 1 a 5 na ordem pelo Runner; o pedido criado é salvo em order_id. A pasta 6 é manual: reinicie a API antes de executá-la.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "order_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Saúde e métricas",
+      "item": [
+        {
+          "name": "GET /health — aplicação de pé",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type é JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^application\\/json\\b/));",
+                  "pm.test('Corpo retorna status ok', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.be.an('object');",
+                  "    pm.expect(body.status).to.eql('ok');",
+                  "    pm.expect(Object.keys(body)).to.eql(['status']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /metrics — métrica Prometheus",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type é text/plain', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^text\\/plain\\b/));",
+                  "pm.test('Expõe o contador orders_http_requests_total', () => {",
+                  "    pm.expect(pm.response.text()).to.include('# TYPE orders_http_requests_total counter');",
+                  "    pm.expect(pm.response.text()).to.match(/orders_http_requests_total\\{method=\"(GET|POST)\",route=\"[^\"]+\",status=\"\\d+\"\\} \\d+/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Fluxo principal",
+      "item": [
+        {
+          "name": "POST /orders — criar pedido (valida total)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('order_id');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Content-Type é JSON', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^application\\/json\\b/));",
+                  "pm.test('Resposta contém id, items e total_cents', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.all.keys('id', 'items', 'total_cents');",
+                  "    pm.expect(body.id).to.be.a('string');",
+                  "    pm.expect(body.id).to.have.lengthOf(36);",
+                  "});",
+                  "pm.test('Total calculado no servidor: 2 x 1299 = 2598', () => {",
+                  "    pm.expect(pm.response.json().total_cents).to.equal(2598);",
+                  "});",
+                  "pm.test('Itens são devolvidos normalizados', () => {",
+                  "    const items = pm.response.json().items;",
+                  "    pm.expect(items).to.have.lengthOf(1);",
+                  "    pm.expect(items[0]).to.eql({ name: 'Livro', quantity: 2, unit_price_cents: 1299 });",
+                  "});",
+                  "pm.test('Sem campos extras na resposta', () => {",
+                  "    pm.expect(Object.keys(pm.response.json())).to.have.members(['id', 'items', 'total_cents']);",
+                  "});",
+                  "const id = pm.response.json().id;",
+                  "pm.collectionVariables.set('order_id', id);",
+                  "pm.test('order_id salvo para os próximos requests', () => pm.expect(pm.collectionVariables.get('order_id')).to.eql(id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"name\": \"Livro\", \"quantity\": 2, \"unit_price_cents\": 1299 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — pedido com vários itens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Total soma todos os itens: (2 x 1299) + (5 x 199) = 3593', () => {",
+                  "    pm.expect(pm.response.json().total_cents).to.equal(3593);",
+                  "});",
+                  "pm.test('Todos os itens presentes', () => {",
+                  "    pm.expect(pm.response.json().items).to.have.lengthOf(3);",
+                  "});",
+                  "pm.test('Preço zero é aceito (total não vira NaN)', () => {",
+                  "    pm.expect(pm.response.json().total_cents).to.be.a('number');",
+                  "    pm.expect(Number.isFinite(pm.response.json().total_cents)).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"name\": \"Livro\", \"quantity\": 2, \"unit_price_cents\": 1299 },\n    { \"name\": \"Caneta\", \"quantity\": 5, \"unit_price_cents\": 199 },\n    { \"name\": \"Adesivo\", \"quantity\": 1, \"unit_price_cents\": 0 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /orders/:id — consultar pedido criado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('O pedido consultado é o mesmo criado', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.id).to.eql(pm.collectionVariables.get('order_id'));",
+                  "    pm.expect(body.total_cents).to.equal(2598);",
+                  "    pm.expect(body.items[0].name).to.equal('Livro');",
+                  "});",
+                  "pm.test('Resposta contém os campos esperados', () => {",
+                  "    pm.expect(pm.response.json()).to.have.all.keys('id', 'items', 'total_cents');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders/{{order_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders",
+                "{{order_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /orders/:id — pedido inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Mensagem de erro em português', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Pedido não encontrado.');",
+                  "});",
+                  "pm.test('Não vaza detalhe interno', () => {",
+                  "    pm.expect(pm.response.text()).to.not.include('sqlite');",
+                  "    pm.expect(pm.response.text()).to.not.include('Traceback');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /metrics — rota de pedidos normalizada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Rota normalizada usa /orders/{id}', () => {",
+                  "    pm.expect(pm.response.text()).to.include('route=\"/orders/{id}\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Validações de domínio (400)",
+      "item": [
+        {
+          "name": "POST /orders — lista de itens vazia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro explicando a regra', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O pedido precisa de ao menos um item.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — objeto com campo extra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Rejeita objeto fora do contrato', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Envie um objeto contendo apenas items.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"customer\": \"João\", \"items\": [] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — JSON malformado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro genérico de JSON inválido', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('JSON inválido.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — item sem os campos obrigatórios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Cobra name, quantity e unit_price_cents', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Cada item exige name, quantity e unit_price_cents.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 1 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — nome vazio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Nome não pode ser vazio', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O nome deve ter entre 1 e 200 caracteres.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"   \", \"quantity\": 1, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — quantidade zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Quantidade deve ser positiva', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('A quantidade deve ser um inteiro entre 1 e 10000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 0, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — quantidade negativa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Quantidade negativa rejeitada', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('A quantidade deve ser um inteiro entre 1 e 10000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": -3, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — quantidade fracionária (float)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Float não é aceito como inteiro', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('A quantidade deve ser um inteiro entre 1 e 10000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 1.5, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — preço negativo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Preço em centavos não pode ser negativo', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O preço em centavos deve ser um inteiro entre 0 e 100000000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 1, \"unit_price_cents\": -50 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — preço como string",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Preço precisa ser inteiro, não string', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O preço em centavos deve ser um inteiro entre 0 e 100000000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 1, \"unit_price_cents\": \"100\" } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — nome com mais de 200 caracteres",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Nome acima de 200 caracteres rejeitado', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O nome deve ter entre 1 e 200 caracteres.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"quantity\": 1, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Métodos e rotas",
+      "item": [
+        {
+          "name": "GET /orders — método não permitido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 405', () => pm.response.to.have.status(405));",
+                  "pm.test('Mensagem de método não permitido', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Método não permitido.');",
+                  "});",
+                  "pm.test('Allow indica POST', () => {",
+                  "    pm.expect(pm.response.headers.get('Allow')).to.equal('POST');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /health — método não permitido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 405', () => pm.response.to.have.status(405));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /orders/qualquer-coisa — id malformado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 (não explode com id inválido)', () => pm.response.to.have.status(404));",
+                  "pm.test('Resposta é JSON de erro', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Pedido não encontrado.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders/qualquer-coisa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders",
+                "qualquer-coisa"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /rota-inexistente — 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Erro de rota', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Rota não encontrada.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/rota-inexistente",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "rota-inexistente"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — Content-Type errado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 415 Unsupported Media Type', () => pm.response.to.have.status(415));",
+                  "pm.test('Pede JSON explicitamente', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('Use Content-Type: application/json.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "nome=Livro",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — corpo vazio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('JSON inválido tratado', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('JSON inválido.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Limites do domínio",
+      "item": [
+        {
+          "name": "POST /orders — exatamente 100 itens (aceito)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 para o limite de 100 itens', () => pm.response.to.have.status(201));",
+                  "pm.test('Total bate com 100 x 10', () => {",
+                  "    pm.expect(pm.response.json().total_cents).to.equal(1000);",
+                  "    pm.expect(pm.response.json().items).to.have.lengthOf(100);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\"name\":\"Item 01\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 02\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 03\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 04\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 05\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 06\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 07\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 08\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 09\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 10\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 11\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 12\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 13\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 14\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 15\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 16\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 17\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 18\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 19\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 20\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 21\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 22\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 23\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 24\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 25\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 26\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 27\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 28\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 29\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 30\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 31\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 32\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 33\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 34\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 35\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 36\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 37\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 38\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 39\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 40\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 41\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 42\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 43\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 44\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 45\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 46\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 47\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 48\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 49\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 50\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 51\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 52\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 53\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 54\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 55\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 56\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 57\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 58\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 59\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 60\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 61\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 62\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 63\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 64\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 65\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 66\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 67\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 68\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 69\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 70\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 71\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 72\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 73\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 74\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 75\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 76\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 77\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 78\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 79\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 80\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 81\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 82\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 83\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 84\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 85\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 86\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 87\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 88\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 89\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 90\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 91\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 92\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 93\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 94\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 95\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 96\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 97\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 98\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 99\",\"quantity\":1,\"unit_price_cents\":10},\n    {\"name\":\"Item 100\",\"quantity\":1,\"unit_price_cents\":10}\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — 101 itens (recusado)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = Array.from({ length: 101 }, (_, i) => ({ name: 'Item ' + i, quantity: 1, unit_price_cents: 10 }));",
+                  "pm.request.body.update(JSON.stringify({ items }));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('101 itens retorna 400', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.equal('O pedido pode ter no máximo 100 itens.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — quantidade acima de 10000",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Quantidade com teto de 10000', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('A quantidade deve ser um inteiro entre 1 e 10000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 10001, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — preço acima do teto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Preço com teto de 100000000 centavos', () => {",
+                  "    pm.expect(pm.response.json().error).to.equal('O preço em centavos deve ser um inteiro entre 0 e 100000000.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Livro\", \"quantity\": 1, \"unit_price_cents\": 100000001 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — total gigante sem overflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('10000 x 100000000 = 1000000000000 sem perder precisão', () => {",
+                  "    pm.expect(pm.response.json().total_cents).to.equal(1000000000000);",
+                  "    pm.expect(Number.isSafeInteger(pm.response.json().total_cents)).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"Ouro\", \"quantity\": 10000, \"unit_price_cents\": 100000000 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /orders — espaço antes do nome é normalizado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Nome é aparado (trim)', () => {",
+                  "    pm.expect(pm.response.json().items[0].name).to.equal('Livro');",
+                  "    pm.expect(pm.response.json().items[0].name).to.not.match(/^\\s|\\s$/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"items\": [ { \"name\": \"   Livro   \", \"quantity\": 1, \"unit_price_cents\": 100 } ] }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Persistência (teste manual)",
+      "item": [
+        {
+          "name": "GET /orders/:id — verificar após reiniciar a API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "/* Rode este depois de reiniciar a aplicação:",
+                  "   docker compose restart   ou   podman-compose restart",
+                  "   O pedido criado no passo 2 deve continuar disponível. */",
+                  "pm.test('Status 200 após reinício', () => pm.response.to.have.status(200));",
+                  "pm.test('Pedido continua no banco (SQLite em volume)', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.id).to.eql(pm.collectionVariables.get('order_id'));",
+                  "    pm.expect(body.total_cents).to.equal(2598);",
+                  "});",
+                  "pm.test('order_id definido — rode o passo 2 antes', () => {",
+                  "    pm.expect(pm.collectionVariables.get('order_id')).to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders/{{order_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Crie o pedido no passo 2, reinicie o contêiner (`docker compose restart`) e envie este request. Ele deve continuar respondendo 200 com o mesmo pedido."
+          }
+        }
+      ]
+    }
+  ]
+}

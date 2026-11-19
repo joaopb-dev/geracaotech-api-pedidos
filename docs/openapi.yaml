@@ -1,0 +1,119 @@
+openapi: 3.1.0
+info:
+  title: API de pedidos
+  version: 1.0.0
+  description: Criação e consulta de pedidos com valores em centavos.
+servers:
+  - url: http://localhost:8080
+paths:
+  /orders:
+    post:
+      summary: Criar pedido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              additionalProperties: false
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    $ref: '#/components/schemas/Item'
+      responses:
+        '201':
+          description: Pedido criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /orders/{id}:
+    get:
+      summary: Consultar pedido
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pedido encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/Error'
+        '500':
+          $ref: '#/components/responses/Error'
+  /health:
+    get:
+      summary: Verificar processo
+      responses:
+        '200':
+          description: Processo ativo
+  /metrics:
+    get:
+      summary: Consultar contador de requisições no formato Prometheus
+      responses:
+        '200':
+          description: Métricas em texto
+components:
+  schemas:
+    Item:
+      type: object
+      required: [name, quantity, unit_price_cents]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+        quantity:
+          type: integer
+          description: Valor inteiro; notação decimal ou científica equivalente é aceita e normalizada.
+          minimum: 1
+          maximum: 10000
+        unit_price_cents:
+          type: integer
+          description: Valor inteiro em centavos; notação decimal ou científica equivalente é aceita e normalizada.
+          minimum: 0
+          maximum: 100000000
+    Order:
+      type: object
+      required: [id, items, total_cents]
+      properties:
+        id:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        total_cents:
+          type: integer
+  responses:
+    Error:
+      description: Requisição inválida ou erro no servidor
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string

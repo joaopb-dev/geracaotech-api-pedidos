@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_PATH: /data/orders.db
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - orders_data:/data
+volumes:
+  orders_data:

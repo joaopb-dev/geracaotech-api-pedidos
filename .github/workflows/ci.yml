@@ -1,0 +1,65 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m ruff check src tests
+      - run: python -m coverage run -m unittest discover -s tests -v
+      - run: python -m coverage report
+
+  smoke-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Iniciar aplicação
+        run: |
+          docker compose up --build -d
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://localhost:8080/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs
+          exit 1
+      - name: Verificar persistência após reinício
+        run: |
+          set -euo pipefail
+          response=$(curl --silent --show-error --fail http://localhost:8080/orders \
+            -H 'Content-Type: application/json' \
+            -d '{"items":[{"name":"Livro","quantity":2,"unit_price_cents":1299}]}')
+          order_id=$(printf '%s' "$response" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["total_cents"] == 2598; print(d["id"])')
+          docker compose restart api
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://localhost:8080/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --silent --show-error --fail "http://localhost:8080/orders/$order_id" | \
+            python -c 'import json,sys; assert json.load(sys.stdin)["total_cents"] == 2598'
+      - name: Executar smoke test k6
+        run: |
+          set -o pipefail
+          docker run --rm --network host -v "$PWD/k6:/scripts:ro" \
+            grafana/k6:0.54.0 run --no-color /scripts/smoke.js | tee k6-result.txt
+      - name: Guardar resultado de desempenho
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-k6
+          path: k6-result.txt
+          if-no-files-found: ignore
+      - name: Encerrar contêineres
+        if: always()
+        run: docker compose down -v
